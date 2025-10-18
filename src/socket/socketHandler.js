@@ -22,12 +22,13 @@ export const setupSocketHandlers = (io) => {
       // Verify JWT token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       const userId = decoded.user_id;
+      const userPhone = decoded.phone; // Now we have phone in JWT
       
       // Store user as online
       onlineUsers[userId] = socket.id;
-      console.log(`✅ User ${userId} is now ONLINE`);
+      console.log(`✅ User ${userId} (${userPhone}) is now ONLINE`);
 
-      // Auto-deliver pending messages
+      // 🔥 Auto-deliver pending messages from BOTH tables
       await deliverPendingMessages(userId, socket, io);
 
       // Listen for message delivery acknowledgment
@@ -42,7 +43,7 @@ export const setupSocketHandlers = (io) => {
       // Handle disconnect
       socket.on('disconnect', () => {
         delete onlineUsers[userId];
-        console.log(`❌ User ${userId} is now OFFLINE`);
+        console.log(`❌ User ${userId} (${userPhone}) is now OFFLINE`);
       });
 
     } catch (error) {
@@ -52,12 +53,15 @@ export const setupSocketHandlers = (io) => {
   });
 };
 
-// Function to deliver pending messages
+// Function to deliver pending messages from BOTH tables
 async function deliverPendingMessages(userId, socket, io) {
   try {
-    // Fetch all undelivered messages for this user
-    const result = await pool.query(
-      `SELECT m.id, m.text, m.created_at, u.username as sender_name, u.id as sender_id
+    // 🔥 FETCH FROM MESSAGES TABLE (registered → registered)
+    const messagesResult = await pool.query(
+      `SELECT m.id, m.text, m.created_at, 
+              u.username as sender_name, 
+              u.phone as sender_phone,
+              u.id as sender_id
        FROM messages m
        JOIN users u ON m.sender_id = u.id
        WHERE m.receiver_id = $1 AND m.is_delivered = false
@@ -65,7 +69,7 @@ async function deliverPendingMessages(userId, socket, io) {
       [userId]
     );
 
-    const messages = result.rows;
+    const messages = messagesResult.rows;
 
     if (messages.length > 0) {
       console.log(`📨 Delivering ${messages.length} pending messages to user ${userId}`);
@@ -74,15 +78,22 @@ async function deliverPendingMessages(userId, socket, io) {
       for (const msg of messages) {
         socket.emit('new_message', {
           message_id: msg.id,
-          sender_name: msg.sender_name,
+          sender_name: msg.sender_name || msg.sender_phone,
+          sender_phone: msg.sender_phone,
           sender_id: msg.sender_id,
           text: msg.text,
-          created_at: msg.created_at
+          created_at: msg.created_at,
+          source: 'messages' // Indicates it's from messages table
         });
       }
     } else {
       console.log(`No pending messages for user ${userId}`);
     }
+
+    // 🔥 NOTE: pending_invites are already moved to messages table during registration
+    // So we don't need to check pending_invites here
+    // This happens in authController.js register() function
+
   } catch (error) {
     console.error('Error delivering pending messages:', error);
   }
@@ -94,7 +105,10 @@ export async function sendRealTimeMessage(receiverId, messageData, io) {
   
   if (receiverSocketId) {
     // Receiver is online, send via Socket.io
-    io.to(receiverSocketId).emit('new_message', messageData);
+    io.to(receiverSocketId).emit('new_message', {
+      ...messageData,
+      source: 'realtime' // Indicates real-time delivery
+    });
     console.log(`📨 Real-time message sent to user ${receiverId}`);
     return true; // Message delivered
   }

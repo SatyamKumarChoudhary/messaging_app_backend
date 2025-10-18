@@ -2,24 +2,32 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
 
-// User Registration
+// User Registration (Phone-Based)
 export const register = async (req, res) => {
   try {
     const { username, email, phone, password } = req.body;
 
-    // Validate input
-    if (!username || !email || !phone || !password) {
-      return res.status(400).json({ error: 'All fields are required' });
+    // Validate input - Phone is REQUIRED
+    if (!phone || !password) {
+      return res.status(400).json({ error: 'Phone and password are required' });
     }
 
-    // Check if user already exists
+    // Phone validation (Indian format: +919876543210)
+    const phoneRegex = /^\+91[6-9]\d{9}$/;
+    if (!phoneRegex.test(phone)) {
+      return res.status(400).json({ 
+        error: 'Invalid phone format. Use: +919876543210' 
+      });
+    }
+
+    // Check if phone already registered
     const userExists = await pool.query(
-      'SELECT * FROM users WHERE username = $1 OR email = $2 OR phone = $3',
-      [username, email, phone]
+      'SELECT * FROM users WHERE phone = $1',
+      [phone]
     );
 
     if (userExists.rows.length > 0) {
-      return res.status(400).json({ error: 'User already exists' });
+      return res.status(400).json({ error: 'Phone number already registered' });
     }
 
     // Hash password
@@ -29,12 +37,44 @@ export const register = async (req, res) => {
     // Insert user into database
     const newUser = await pool.query(
       'INSERT INTO users (username, email, phone, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, username, email, phone',
-      [username, email, phone, hashedPassword]
+      [username || null, email || null, phone, hashedPassword]
     );
 
-    // Generate JWT token
+    const userId = newUser.rows[0].id;
+
+    // 🔥 DELIVER PENDING INVITES - Check if anyone sent messages to this phone before registration
+    const pendingInvites = await pool.query(
+      'SELECT * FROM pending_invites WHERE receiver_phone = $1 AND is_delivered = false',
+      [phone]
+    );
+
+    if (pendingInvites.rows.length > 0) {
+      console.log(`📨 Found ${pendingInvites.rows.length} pending invites for ${phone}`);
+      
+      // Move pending invites to messages table (now that user is registered)
+      for (const invite of pendingInvites.rows) {
+        await pool.query(
+          'INSERT INTO messages (sender_id, receiver_id, text, is_delivered, created_at) VALUES ($1, $2, $3, $4, $5)',
+          [invite.sender_id, userId, invite.text, false, invite.created_at]
+        );
+      }
+
+      // Delete delivered pending invites
+      await pool.query(
+        'DELETE FROM pending_invites WHERE receiver_phone = $1',
+        [phone]
+      );
+
+      console.log(`✅ Moved ${pendingInvites.rows.length} pending invites to messages table`);
+    }
+
+    // Generate JWT token (include phone)
     const token = jwt.sign(
-      { user_id: newUser.rows[0].id, username: newUser.rows[0].username },
+      { 
+        user_id: userId, 
+        phone: phone,
+        username: username || phone
+      },
       process.env.JWT_SECRET,
       { expiresIn: '30d' }
     );
@@ -43,7 +83,13 @@ export const register = async (req, res) => {
       success: true,
       message: 'User registered successfully',
       token,
-      user: newUser.rows[0]
+      user: {
+        id: newUser.rows[0].id,
+        username: newUser.rows[0].username,
+        email: newUser.rows[0].email,
+        phone: newUser.rows[0].phone
+      },
+      pendingMessagesDelivered: pendingInvites.rows.length
     });
   } catch (error) {
     console.error('Registration error:', error);
@@ -51,20 +97,20 @@ export const register = async (req, res) => {
   }
 };
 
-// User Login
+// User Login (Phone-Based)
 export const login = async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { phone, password } = req.body;
 
     // Validate input
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Username and password required' });
+    if (!phone || !password) {
+      return res.status(400).json({ error: 'Phone and password are required' });
     }
 
-    // Find user
+    // Find user by phone
     const user = await pool.query(
-      'SELECT * FROM users WHERE username = $1',
-      [username]
+      'SELECT * FROM users WHERE phone = $1',
+      [phone]
     );
 
     if (user.rows.length === 0) {
@@ -78,9 +124,13 @@ export const login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // Generate JWT token
+    // Generate JWT token (include phone)
     const token = jwt.sign(
-      { user_id: user.rows[0].id, username: user.rows[0].username },
+      { 
+        user_id: user.rows[0].id, 
+        phone: user.rows[0].phone,
+        username: user.rows[0].username || user.rows[0].phone
+      },
       process.env.JWT_SECRET,
       { expiresIn: '30d' }
     );
