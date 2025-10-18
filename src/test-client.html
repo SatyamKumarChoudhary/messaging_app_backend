@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Snap Socket.io Test Client</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #f0f0f0; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
+        input, button { padding: 10px; margin: 5px; font-size: 14px; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; border-radius: 5px; }
+        button:hover { background: #0056b3; }
+        .messages { border: 1px solid #ddd; padding: 10px; margin: 10px 0; min-height: 200px; background: #fafafa; }
+        .message { padding: 8px; margin: 5px 0; background: #e3f2fd; border-radius: 5px; }
+        .log { color: #666; font-size: 12px; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 Snap Socket.io Test Client</h1>
+        
+        <div>
+            <h3>Step 1: Connect as User</h3>
+            <input type="text" id="token" placeholder="Paste JWT token here" style="width: 400px;">
+            <button onclick="connect()">Connect</button>
+            <button onclick="disconnect()">Disconnect</button>
+            <div id="status" class="log">Not connected</div>
+        </div>
+
+        <div>
+            <h3>Step 2: Received Messages</h3>
+            <div id="messages" class="messages">
+                <p class="log">No messages yet...</p>
+            </div>
+        </div>
+
+        <div>
+            <h3>Actions</h3>
+            <button onclick="clearMessages()">Clear Messages</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        let socket = null;
+
+        function connect() {
+            const token = document.getElementById('token').value.trim();
+            
+            if (!token) {
+                alert('Please enter a JWT token!');
+                return;
+            }
+
+            // Connect to Socket.io server
+            socket = io('http://localhost:3000', {
+                auth: { token: token }
+            });
+
+            socket.on('connect', () => {
+                updateStatus('✅ Connected! Socket ID: ' + socket.id, 'success');
+            });
+
+            socket.on('new_message', (data) => {
+                console.log('New message received:', data);
+                displayMessage(data);
+                
+                // Send delivery acknowledgment
+                socket.emit('message_delivered', {
+                    message_id: data.message_id
+                });
+                
+                updateStatus(`📨 Message delivered and acknowledged (ID: ${data.message_id})`, 'success');
+            });
+
+            socket.on('disconnect', () => {
+                updateStatus('❌ Disconnected', 'error');
+            });
+
+            socket.on('connect_error', (error) => {
+                updateStatus('❌ Connection error: ' + error.message, 'error');
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+                updateStatus('Disconnected manually', 'log');
+            }
+        }
+
+        function displayMessage(data) {
+            const messagesDiv = document.getElementById('messages');
+            
+            // Clear "no messages" text
+            if (messagesDiv.children.length === 1 && messagesDiv.children[0].classList.contains('log')) {
+                messagesDiv.innerHTML = '';
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            messageDiv.innerHTML = `
+                <strong>From: ${data.sender_name}</strong><br>
+                <p>${data.text}</p>
+                <small>ID: ${data.message_id} | ${new Date(data.created_at).toLocaleString()}</small>
+            `;
+            messagesDiv.appendChild(messageDiv);
+        }
+
+        function updateStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = type;
+        }
+
+        function clearMessages() {
+            document.getElementById('messages').innerHTML = '<p class="log">No messages yet...</p>';
+        }
+    </script>
+</body>
+</html>
