@@ -1,8 +1,9 @@
 import pool from '../config/db.js';
 import { sendRealTimeMessage } from '../socket/socketHandler.js';
 import { io } from '../server.js';
+import { sendMessageNotificationSMS } from '../services/smsService.js';
 
-// Send a message (Phone-Based with Dual Table Routing)
+// Send a message (Phone-Based with Dual Table Routing + SMS)
 export const sendMessage = async (req, res) => {
   try {
     const { receiver_phone, text } = req.body;
@@ -69,20 +70,38 @@ export const sendMessage = async (req, res) => {
       });
     } 
     
-    // CASE 2: Receiver is NOT REGISTERED → Insert into pending_invites table
+    // CASE 2: Receiver is NOT REGISTERED → Insert into pending_invites + Send SMS
     else {
       const pendingInvite = await pool.query(
         'INSERT INTO pending_invites (sender_id, receiver_phone, text, is_delivered) VALUES ($1, $2, $3, $4) RETURNING *',
         [sender_id, receiver_phone, text, false]
       );
 
+      // 📲 SEND SMS NOTIFICATION (run in background, don't wait)
+      console.log(`📲 Sending SMS to unregistered user: ${receiver_phone}`);
+      
+      sendMessageNotificationSMS(
+        receiver_phone,
+        sender_name,
+        text.substring(0, 50) // Preview: first 50 chars
+      ).then(smsResult => {
+        if (smsResult.success) {
+          console.log(`✅ SMS sent successfully to ${receiver_phone}`);
+        } else {
+          console.error(`❌ SMS failed to ${receiver_phone}:`, smsResult.error);
+        }
+      }).catch(err => {
+        console.error(`❌ SMS error for ${receiver_phone}:`, err);
+      });
+
       return res.status(201).json({
         success: true,
-        message: 'Message sent to unregistered user. They will receive it when they sign up.',
+        message: 'Message sent to unregistered user. SMS notification sent!',
         invite_id: pendingInvite.rows[0].id,
         delivered: false,
         receiver_status: 'unregistered',
-        info: `Message saved for ${receiver_phone}. They'll get it when they register.`
+        sms_sent: true,
+        info: `Message saved for ${receiver_phone}. They'll receive SMS and get the message when they register.`
       });
     }
 
