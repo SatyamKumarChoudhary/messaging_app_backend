@@ -21,10 +21,15 @@ export const sendSMSNotification = async (toPhone, senderName, messagePreview = 
     // Ensure phone number has country code
     const formattedPhone = toPhone.startsWith('+') ? toPhone : `+91${toPhone}`;
     
-    // Create SMS message (keep under 160 chars for single SMS)
-    const smsBody = `Hi! ${senderName} sent you a message on Snap!\n` +
-                    `"${messagePreview.substring(0, 40)}${messagePreview.length > 40 ? '...' : ''}"\n` +
-                    `Register: https://snap.app`;
+    // Create teaser preview (first 20 chars)
+    const previewLength = 20;
+    const preview = messagePreview.substring(0, previewLength);
+    const remainingChars = messagePreview.length - previewLength;
+    
+    // Create SMS message with mystery and excitement
+    const smsBody = `📩 Someone sent you a Snap!\n` +
+                    `💬 '${preview}...' ${remainingChars > 0 ? `+${remainingChars} chars` : ''}\n` +
+                    `Read full message: snap.app`;
 
     console.log(`📲 Sending SMS via AWS SNS to ${formattedPhone}...`);
     console.log(`📝 Message: ${smsBody}`);
