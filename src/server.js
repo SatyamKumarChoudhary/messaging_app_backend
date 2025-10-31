@@ -1,7 +1,6 @@
 // Load environment variables
 import dotenv from 'dotenv';
 import './config/db.js';
-import messageRoutes from './routes/messageRoutes.js';
 
 dotenv.config();
 
@@ -9,8 +8,12 @@ import express from 'express';
 import cors from 'cors';
 import http from 'http';
 import { Server } from 'socket.io';
+
 // Import routes
 import authRoutes from './routes/authRoutes.js';
+import messageRoutes from './routes/messageRoutes.js';
+import mediaRoutes from './routes/mediaRoutes.js';
+
 import { setupSocketHandlers } from './socket/socketHandler.js';
 
 // Initialize Express app
@@ -25,23 +28,21 @@ const io = new Server(server, {
   }
 });
 
-// Setup Socket.io handlers , when the user hit the main route the web socket connection will be created
-setupSocketHandlers(io);  // ← ADD THIS LINE
-
-
+// Setup Socket.io handlers
+setupSocketHandlers(io);
 
 // Middleware
 app.use(cors());
 app.use(express.json()); // Parse JSON request bodies
 
-
 // Use routes
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
+app.use('/api/media', mediaRoutes); // ← NEW: Media upload route
 
 // Test route
 app.get('/', (req, res) => {
-  res.json({ message: 'Snap API is running!' });
+  res.json({ message: 'Ghost API is running!' });
 });
 
 // Server port

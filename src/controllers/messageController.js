@@ -3,15 +3,28 @@ import { sendRealTimeMessage } from '../socket/socketHandler.js';
 import { io } from '../server.js';
 import { sendSMSNotification } from '../services/awsSnsService.js';
 
-// Send a message (Phone-Based with Dual Table Routing + SMS)
+// Send a message (Phone-Based with Dual Table Routing + SMS + Media Support)
 export const sendMessage = async (req, res) => {
   try {
-    const { receiver_phone, text } = req.body;
+    const { 
+      receiver_phone, 
+      text,
+      message_type = 'text',  // NEW: Default to 'text'
+      media_url = null,       // NEW: S3 URL
+      file_name = null,       // NEW: Original filename
+      file_size = null        // NEW: File size in bytes
+    } = req.body;
+    
     const sender_id = req.user.user_id; // From JWT token (set by auth middleware)
 
     // Validate input
-    if (!receiver_phone || !text) {
-      return res.status(400).json({ error: 'Receiver phone and text are required' });
+    if (!receiver_phone) {
+      return res.status(400).json({ error: 'Receiver phone is required' });
+    }
+
+    // NEW: Validate that either text OR media is provided
+    if (!text && !media_url) {
+      return res.status(400).json({ error: 'Either text or media is required' });
     }
 
     // Phone validation (Indian format: +919876543210)
@@ -40,10 +53,13 @@ export const sendMessage = async (req, res) => {
     if (receiver.rows.length > 0) {
       const receiver_id = receiver.rows[0].id;
 
-      // Insert message into messages table
+      // Insert message into messages table (with media fields)
       const newMessage = await pool.query(
-        'INSERT INTO messages (sender_id, receiver_id, text, is_delivered) VALUES ($1, $2, $3, $4) RETURNING *',
-        [sender_id, receiver_id, text, false]
+        `INSERT INTO messages 
+         (sender_id, receiver_id, text, message_type, media_url, file_name, file_size, is_delivered) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+         RETURNING *`,
+        [sender_id, receiver_id, text || '', message_type, media_url, file_name, file_size, false]
       );
 
       // Prepare message data for real-time delivery
@@ -52,7 +68,11 @@ export const sendMessage = async (req, res) => {
         sender_name: sender_name,
         sender_phone: sender_phone,
         sender_id: sender_id,
-        text: text,
+        text: text || '',
+        message_type: message_type,        // NEW
+        media_url: media_url,              // NEW
+        file_name: file_name,              // NEW
+        file_size: file_size,              // NEW
         created_at: newMessage.rows[0].created_at
       };
 
@@ -66,7 +86,8 @@ export const sendMessage = async (req, res) => {
           : 'Message sent (user offline, will be delivered when online)',
         message_id: newMessage.rows[0].id,
         delivered: delivered,
-        receiver_status: 'registered'
+        receiver_status: 'registered',
+        message_type: message_type         // NEW
       });
     } 
     
@@ -75,8 +96,11 @@ export const sendMessage = async (req, res) => {
       console.log(`📞 User not registered: ${receiver_phone}. Saving to pending_invites...`);
 
       const pendingInvite = await pool.query(
-        'INSERT INTO pending_invites (sender_id, receiver_phone, text, is_delivered) VALUES ($1, $2, $3, $4) RETURNING *',
-        [sender_id, receiver_phone, text, false]
+        `INSERT INTO pending_invites 
+         (sender_id, receiver_phone, text, message_type, media_url, file_name, file_size, is_delivered) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+         RETURNING *`,
+        [sender_id, receiver_phone, text || '', message_type, media_url, file_name, file_size, false]
       );
 
       console.log(`✅ Message saved to pending_invites (ID: ${pendingInvite.rows[0].id})`);
@@ -84,8 +108,16 @@ export const sendMessage = async (req, res) => {
       // 📲 SEND SMS NOTIFICATION via AWS SNS
       console.log(`📲 Sending SMS via AWS SNS to: ${receiver_phone}`);
       
-      const messagePreview = text.length > 40 ? text.substring(0, 40) : text;
-      const smsResult = await sendSMSNotification(receiver_phone, sender_name, messagePreview);
+      // NEW: Adjust SMS text based on message type
+      let smsText;
+      if (message_type === 'text') {
+        const messagePreview = text.length > 40 ? text.substring(0, 40) + '...' : text;
+        smsText = messagePreview;
+      } else {
+        smsText = `sent you a ${message_type}`; // "sent you a image/video/file"
+      }
+      
+      const smsResult = await sendSMSNotification(receiver_phone, sender_name, smsText);
 
       if (smsResult.success) {
         console.log(`✅ SMS sent successfully via AWS SNS. MessageId: ${smsResult.messageId}`);
@@ -99,6 +131,7 @@ export const sendMessage = async (req, res) => {
         invite_id: pendingInvite.rows[0].id,
         delivered: false,
         receiver_status: 'unregistered',
+        message_type: message_type,        // NEW
         sms_sent: smsResult.success,
         sms_details: {
           provider: 'AWS SNS',
@@ -115,14 +148,15 @@ export const sendMessage = async (req, res) => {
   }
 };
 
-// Get pending messages for logged-in user (No changes needed)
+// Get pending messages for logged-in user (Updated to include media fields)
 export const getPendingMessages = async (req, res) => {
   try {
     const user_id = req.user.user_id; // From JWT token
 
-    // Get all undelivered messages for this user
+    // Get all undelivered messages for this user (including media fields)
     const messages = await pool.query(
-      `SELECT m.id, m.text, m.created_at, u.username as sender_name, u.phone as sender_phone, u.id as sender_id
+      `SELECT m.id, m.text, m.message_type, m.media_url, m.file_name, m.file_size, m.created_at, 
+              u.username as sender_name, u.phone as sender_phone, u.id as sender_id
        FROM messages m
        JOIN users u ON m.sender_id = u.id
        WHERE m.receiver_id = $1 AND m.is_delivered = false
