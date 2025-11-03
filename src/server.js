@@ -13,6 +13,7 @@ import { Server } from 'socket.io';
 import authRoutes from './routes/authRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
+import groupRoutes from './routes/groupRoutes.js';  // 🆕 NEW: Group routes
 
 import { setupSocketHandlers } from './socket/socketHandler.js';
 
@@ -38,11 +39,12 @@ app.use(express.json()); // Parse JSON request bodies
 // Use routes
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
-app.use('/api/media', mediaRoutes); // ← NEW: Media upload route
+app.use('/api/media', mediaRoutes);
+app.use('/api/groups', groupRoutes);  // 🆕 NEW: Group chat routes
 
 // Test route
 app.get('/', (req, res) => {
-  res.json({ message: 'Ghost API is running!' });
+  res.json({ message: 'Ghost API is running with Group Chat!' });
 });
 
 // Server port
@@ -51,5 +53,7 @@ const PORT = process.env.PORT || 3001;
 export { io };
 
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📡 Socket.IO enabled`);
+  console.log(`✅ Group chat enabled`);
 });
