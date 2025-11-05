@@ -2,26 +2,23 @@ import pool from '../config/db.js';
 import { io } from '../server.js';
 
 // ============================================
-// 1. CREATE GROUP
+// 1. CREATE GROUP (NO CHANGES - ALREADY GOOD)
 // ============================================
 export const createGroup = async (req, res) => {
   try {
     const { name, description, member_phones } = req.body;
-    const creator_id = req.user.user_id; // From JWT token
+    const creator_id = req.user.user_id;
 
     console.log('📝 Creating group:', { name, creator_id, member_phones });
 
-    // Validate input
     if (!name || name.trim().length === 0) {
       return res.status(400).json({ error: 'Group name is required' });
     }
 
-    // Start transaction
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
-      // Step 1: Create group
       const newGroup = await client.query(
         'INSERT INTO groups (name, description, created_by) VALUES ($1, $2, $3) RETURNING *',
         [name.trim(), description || null, creator_id]
@@ -30,20 +27,17 @@ export const createGroup = async (req, res) => {
       const group = newGroup.rows[0];
       console.log('✅ Group created:', group.id);
 
-      // Step 2: Add creator as admin
       await client.query(
         'INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)',
         [group.id, creator_id, 'admin']
       );
       console.log('✅ Creator added as admin');
 
-      // Step 3: Add other members (if provided)
       let addedMembers = 0;
       if (member_phones && Array.isArray(member_phones) && member_phones.length > 0) {
         for (const phone of member_phones) {
           if (!phone || phone.trim().length === 0) continue;
 
-          // Find user by phone
           const userResult = await client.query(
             'SELECT id FROM users WHERE phone = $1',
             [phone.trim()]
@@ -52,7 +46,6 @@ export const createGroup = async (req, res) => {
           if (userResult.rows.length > 0) {
             const userId = userResult.rows[0].id;
             
-            // Don't add creator again
             if (userId !== creator_id) {
               await client.query(
                 'INSERT INTO group_members (group_id, user_id, role) VALUES ($1, $2, $3)',
@@ -78,7 +71,7 @@ export const createGroup = async (req, res) => {
           description: group.description,
           created_by: group.created_by,
           created_at: group.created_at,
-          members_added: addedMembers + 1 // +1 for creator
+          members_added: addedMembers + 1
         }
       });
     } catch (error) {
@@ -94,7 +87,7 @@ export const createGroup = async (req, res) => {
 };
 
 // ============================================
-// 2. GET USER'S GROUPS
+// 2. GET USER'S GROUPS (NO CHANGES NEEDED)
 // ============================================
 export const getUserGroups = async (req, res) => {
   try {
@@ -146,7 +139,7 @@ export const getUserGroups = async (req, res) => {
 };
 
 // ============================================
-// 3. SEND GROUP MESSAGE
+// 3. SEND GROUP MESSAGE (WITH GHOST NAMES) ← UPDATED
 // ============================================
 export const sendGroupMessage = async (req, res) => {
   try {
@@ -155,7 +148,6 @@ export const sendGroupMessage = async (req, res) => {
 
     console.log('💬 Sending message to group:', { group_id, sender_id, message_type });
 
-    // Validate input
     if (!group_id) {
       return res.status(400).json({ error: 'Group ID is required' });
     }
@@ -186,20 +178,20 @@ export const sendGroupMessage = async (req, res) => {
     const message = newMessage.rows[0];
     console.log('✅ Message saved to DB:', message.id);
 
-    // Get sender info
+    // Get sender info WITH GHOST NAME
     const senderInfo = await pool.query(
-      'SELECT username, phone FROM users WHERE id = $1',
+      'SELECT username, phone, ghost_name FROM users WHERE id = $1',  // ← ADDED ghost_name
       [sender_id]
     );
 
     const sender = senderInfo.rows[0];
 
-    // Prepare message data for broadcast
+    // Prepare message data with GHOST NAME
     const messageData = {
       id: message.id,
       group_id: message.group_id,
       sender_id: message.sender_id,
-      sender_name: sender.username,
+      sender_name: sender.ghost_name,        // ← GHOST NAME HERE
       sender_phone: sender.phone,
       text: message.text,
       message_type: message.message_type,
@@ -225,7 +217,7 @@ export const sendGroupMessage = async (req, res) => {
 };
 
 // ============================================
-// 4. GET GROUP MESSAGES (with pagination)
+// 4. GET GROUP MESSAGES (WITH GHOST NAMES) ← UPDATED
 // ============================================
 export const getGroupMessages = async (req, res) => {
   try {
@@ -245,14 +237,13 @@ export const getGroupMessages = async (req, res) => {
       return res.status(403).json({ error: 'You are not a member of this group' });
     }
 
-    // Build query based on whether before_id is provided
+    // Build query with GHOST NAMES
     let query;
     let params;
 
     if (before_id) {
-      // Pagination: Get messages before a specific ID
       query = `
-        SELECT gm.*, u.username as sender_name, u.phone as sender_phone
+        SELECT gm.*, u.ghost_name as sender_name, u.phone as sender_phone
         FROM group_messages gm
         JOIN users u ON gm.sender_id = u.id
         WHERE gm.group_id = $1 AND gm.id < $2
@@ -261,9 +252,8 @@ export const getGroupMessages = async (req, res) => {
       `;
       params = [group_id, before_id, limit];
     } else {
-      // Initial load: Get latest messages
       query = `
-        SELECT gm.*, u.username as sender_name, u.phone as sender_phone
+        SELECT gm.*, u.ghost_name as sender_name, u.phone as sender_phone
         FROM group_messages gm
         JOIN users u ON gm.sender_id = u.id
         WHERE gm.group_id = $1
@@ -280,7 +270,7 @@ export const getGroupMessages = async (req, res) => {
     res.json({
       success: true,
       count: messages.rows.length,
-      messages: messages.rows.reverse() // Reverse to show oldest first
+      messages: messages.rows.reverse()
     });
   } catch (error) {
     console.error('❌ Get messages error:', error);
@@ -289,7 +279,7 @@ export const getGroupMessages = async (req, res) => {
 };
 
 // ============================================
-// 5. GET UNREAD MESSAGES ONLY
+// 5. GET UNREAD MESSAGES (WITH GHOST NAMES) ← UPDATED
 // ============================================
 export const getUnreadMessages = async (req, res) => {
   try {
@@ -298,7 +288,6 @@ export const getUnreadMessages = async (req, res) => {
 
     console.log('📬 Fetching unread messages:', { group_id, user_id });
 
-    // Check membership
     const memberCheck = await pool.query(
       'SELECT * FROM group_members WHERE group_id = $1 AND user_id = $2',
       [group_id, user_id]
@@ -308,7 +297,6 @@ export const getUnreadMessages = async (req, res) => {
       return res.status(403).json({ error: 'You are not a member of this group' });
     }
 
-    // Get last read message ID
     const readStatus = await pool.query(
       'SELECT last_read_message_id FROM group_member_read_status WHERE group_id = $1 AND user_id = $2',
       [group_id, user_id]
@@ -320,9 +308,9 @@ export const getUnreadMessages = async (req, res) => {
 
     console.log('📖 Last read message ID:', lastReadId);
 
-    // Get unread messages
+    // Get unread messages with GHOST NAMES
     const messages = await pool.query(
-      `SELECT gm.*, u.username as sender_name, u.phone as sender_phone
+      `SELECT gm.*, u.ghost_name as sender_name, u.phone as sender_phone
        FROM group_messages gm
        JOIN users u ON gm.sender_id = u.id
        WHERE gm.group_id = $1 AND gm.id > $2
@@ -345,7 +333,7 @@ export const getUnreadMessages = async (req, res) => {
 };
 
 // ============================================
-// 6. MARK MESSAGES AS READ
+// 6. MARK MESSAGES AS READ (NO CHANGES)
 // ============================================
 export const markMessagesAsRead = async (req, res) => {
   try {
@@ -358,7 +346,6 @@ export const markMessagesAsRead = async (req, res) => {
       return res.status(400).json({ error: 'Group ID and message ID are required' });
     }
 
-    // Update or insert read status
     await pool.query(
       `INSERT INTO group_member_read_status (group_id, user_id, last_read_message_id, last_read_at)
        VALUES ($1, $2, $3, NOW())
@@ -379,7 +366,7 @@ export const markMessagesAsRead = async (req, res) => {
 };
 
 // ============================================
-// 7. ADD MEMBER TO GROUP
+// 7. ADD MEMBER TO GROUP (WITH GHOST NAMES) ← UPDATED
 // ============================================
 export const addGroupMember = async (req, res) => {
   try {
@@ -388,7 +375,6 @@ export const addGroupMember = async (req, res) => {
 
     console.log('👥 Adding member to group:', { group_id, phone });
 
-    // Validate input
     if (!group_id || !phone) {
       return res.status(400).json({ error: 'Group ID and phone number are required' });
     }
@@ -403,9 +389,9 @@ export const addGroupMember = async (req, res) => {
       return res.status(403).json({ error: 'Only admins can add members' });
     }
 
-    // Find user by phone
+    // Find user by phone WITH GHOST NAME
     const userResult = await pool.query(
-      'SELECT id, username FROM users WHERE phone = $1',
+      'SELECT id, username, ghost_name FROM users WHERE phone = $1',  // ← ADDED ghost_name
       [phone.trim()]
     );
 
@@ -414,7 +400,7 @@ export const addGroupMember = async (req, res) => {
     }
 
     const newMemberId = userResult.rows[0].id;
-    const newMemberName = userResult.rows[0].username;
+    const newMemberGhostName = userResult.rows[0].ghost_name;  // ← USE GHOST NAME
 
     // Add member
     await pool.query(
@@ -422,19 +408,19 @@ export const addGroupMember = async (req, res) => {
       [group_id, newMemberId, 'member']
     );
 
-    console.log('✅ Member added:', newMemberName);
+    console.log('✅ Member added:', newMemberGhostName);
 
     res.json({
       success: true,
-      message: `${newMemberName} added to group`,
+      message: `${newMemberGhostName} added to group`,  // ← GHOST NAME
       member: {
         id: newMemberId,
-        username: newMemberName,
+        username: newMemberGhostName,  // ← GHOST NAME
         phone: phone
       }
     });
   } catch (error) {
-    if (error.code === '23505') { // Unique constraint violation
+    if (error.code === '23505') {
       return res.status(400).json({ error: 'User is already a member of this group' });
     }
     console.error('❌ Add member error:', error);
@@ -443,7 +429,7 @@ export const addGroupMember = async (req, res) => {
 };
 
 // ============================================
-// 8. GET GROUP DETAILS
+// 8. GET GROUP DETAILS (WITH GHOST NAMES) ← UPDATED
 // ============================================
 export const getGroupDetails = async (req, res) => {
   try {
@@ -464,18 +450,18 @@ export const getGroupDetails = async (req, res) => {
 
     const userRole = memberCheck.rows[0].role;
 
-    // Get group info
+    // Get group info WITH GHOST NAME
     const groupInfo = await pool.query(
-      `SELECT g.*, u.username as creator_name
+      `SELECT g.*, u.ghost_name as creator_name
        FROM groups g
        JOIN users u ON g.created_by = u.id
        WHERE g.id = $1`,
       [group_id]
     );
 
-    // Get members
+    // Get members WITH GHOST NAMES
     const members = await pool.query(
-      `SELECT u.id, u.username, u.phone, gm.role, gm.joined_at
+      `SELECT u.id, u.ghost_name as username, u.phone, gm.role, gm.joined_at
        FROM group_members gm
        JOIN users u ON gm.user_id = u.id
        WHERE gm.group_id = $1
