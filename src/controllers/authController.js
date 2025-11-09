@@ -2,11 +2,10 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import pool from '../config/db.js';
 
-// User Registration (Phone-Based)
 // User Registration
 export const register = async (req, res) => {
   try {
-    const { username, email, phone, password, ghost_name } = req.body;
+    const { username, email, phone, password, ghost_name, bio } = req.body;
 
     // Validate input
     if (!username || !email || !phone || !password || !ghost_name) {
@@ -41,13 +40,19 @@ export const register = async (req, res) => {
 
     // Insert user into database
     const newUser = await pool.query(
-      'INSERT INTO users (username, email, phone, password_hash, ghost_name) VALUES ($1, $2, $3, $4, $5) RETURNING id, username, email, phone, ghost_name',
-      [username, email, phone, hashedPassword, ghost_name]
+      `INSERT INTO users (username, email, phone, password_hash, ghost_name, bio, credits, is_premium) 
+       VALUES ($1, $2, $3, $4, $5, $6, 50, false) 
+       RETURNING id, username, email, phone, ghost_name, bio, credits, is_premium, created_at`,
+      [username, email, phone, hashedPassword, ghost_name, bio || null]
     );
 
     // Generate JWT token
     const token = jwt.sign(
-      { user_id: newUser.rows[0].id, username: newUser.rows[0].username, ghost_name: newUser.rows[0].ghost_name },
+      { 
+        user_id: newUser.rows[0].id, 
+        username: newUser.rows[0].username, 
+        ghost_name: newUser.rows[0].ghost_name 
+      },
       process.env.JWT_SECRET,
       { expiresIn: '30d' }
     );
@@ -61,7 +66,11 @@ export const register = async (req, res) => {
         username: newUser.rows[0].username,
         email: newUser.rows[0].email,
         phone: newUser.rows[0].phone,
-        ghost_name: newUser.rows[0].ghost_name
+        ghost_name: newUser.rows[0].ghost_name,
+        bio: newUser.rows[0].bio,
+        credits: newUser.rows[0].credits,
+        is_premium: newUser.rows[0].is_premium,
+        created_at: newUser.rows[0].created_at
       }
     });
   } catch (error) {
@@ -70,12 +79,10 @@ export const register = async (req, res) => {
   }
 };
 
-// User Login (Phone-Based)
 // User Login
-// User Login (PHONE + PASSWORD)
 export const login = async (req, res) => {
   try {
-    const { phone, password } = req.body;  // ← USE PHONE, NOT USERNAME
+    const { phone, password } = req.body;
 
     // Validate input
     if (!phone || !password) {
@@ -84,7 +91,7 @@ export const login = async (req, res) => {
 
     // Find user BY PHONE
     const user = await pool.query(
-      'SELECT * FROM users WHERE phone = $1',
+      'SELECT id, username, email, phone, password_hash, ghost_name, bio, avatar_url, credits, is_premium, created_at FROM users WHERE phone = $1',
       [phone]
     );
 
@@ -119,7 +126,12 @@ export const login = async (req, res) => {
         username: user.rows[0].username,
         email: user.rows[0].email,
         phone: user.rows[0].phone,
-        ghost_name: user.rows[0].ghost_name
+        ghost_name: user.rows[0].ghost_name,
+        bio: user.rows[0].bio,
+        avatar_url: user.rows[0].avatar_url,
+        credits: user.rows[0].credits,
+        is_premium: user.rows[0].is_premium,
+        created_at: user.rows[0].created_at
       }
     });
   } catch (error) {

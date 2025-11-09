@@ -8,12 +8,14 @@ import express from 'express';
 import cors from 'cors';
 import http from 'http';
 import { Server } from 'socket.io';
+import multer from 'multer';
 
 // Import routes
 import authRoutes from './routes/authRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
-import groupRoutes from './routes/groupRoutes.js';  // 🆕 NEW: Group routes
+import groupRoutes from './routes/groupRoutes.js';
+import profileRoutes from './routes/profileRoutes.js';  // 🆕 NEW: Profile routes
 
 import { setupSocketHandlers } from './socket/socketHandler.js';
 
@@ -36,15 +38,34 @@ setupSocketHandlers(io);
 app.use(cors());
 app.use(express.json()); // Parse JSON request bodies
 
+// Multer config for file uploads (memory storage)
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
+
+// Avatar upload middleware (apply before profile routes)
+app.use('/api/profile/avatar', upload.single('avatar'));
+
 // Use routes
 app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/media', mediaRoutes);
-app.use('/api/groups', groupRoutes);  // 🆕 NEW: Group chat routes
+app.use('/api/groups', groupRoutes);
+app.use('/api/profile', profileRoutes);  // 🆕 NEW: Profile routes
 
 // Test route
 app.get('/', (req, res) => {
-  res.json({ message: 'Ghost API is running with Group Chat!' });
+  res.json({ 
+    message: 'Ghost API is running!',
+    features: {
+      auth: true,
+      messaging: true,
+      media: true,
+      groups: true,
+      profile: true  // 🆕 NEW
+    }
+  });
 });
 
 // Server port
@@ -56,4 +77,5 @@ server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📡 Socket.IO enabled`);
   console.log(`✅ Group chat enabled`);
+  console.log(`👤 Profile system enabled`);  // 🆕 NEW
 });
