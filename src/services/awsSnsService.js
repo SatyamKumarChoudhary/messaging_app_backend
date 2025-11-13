@@ -28,9 +28,9 @@ export const sendSMSNotification = async (toPhone, senderName, messagePreview = 
     
     // Create SMS message with mystery and excitement
     const smsBody = `🎭 Mystery message waiting!\n` +
-                `👤 From: ${senderGhostName}\n` +
-                `💬 '${preview}...'\n` +
-                `Open Snap app to read: https://satyamkumarchoudhary.com`;
+                    `👤 From: ${senderName}\n` +
+                    `💬 '${preview}...'\n` +
+                    `Open Snap app to read: https://satyamkumarchoudhary.com`;
 
     console.log(`📲 Sending SMS via AWS SNS to ${formattedPhone}...`);
     console.log(`📝 Message: ${smsBody}`);
