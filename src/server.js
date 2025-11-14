@@ -15,7 +15,8 @@ import authRoutes from './routes/authRoutes.js';
 import messageRoutes from './routes/messageRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
 import groupRoutes from './routes/groupRoutes.js';
-import profileRoutes from './routes/profileRoutes.js';  // 🆕 NEW: Profile routes
+import profileRoutes from './routes/profileRoutes.js';
+import otpRoutes from './routes/otpRoutes.js';  // 🆕 NEW: OTP routes
 
 import { setupSocketHandlers } from './socket/socketHandler.js';
 
@@ -52,7 +53,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/groups', groupRoutes);
-app.use('/api/profile', profileRoutes);  // 🆕 NEW: Profile routes
+app.use('/api/profile', profileRoutes);
+app.use('/api/otp', otpRoutes);  // 🆕 NEW: OTP routes
 
 // Test route
 app.get('/', (req, res) => {
@@ -63,7 +65,8 @@ app.get('/', (req, res) => {
       messaging: true,
       media: true,
       groups: true,
-      profile: true  // 🆕 NEW
+      profile: true,
+      otp: true  // 🆕 NEW
     }
   });
 });
@@ -77,5 +80,6 @@ server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📡 Socket.IO enabled`);
   console.log(`✅ Group chat enabled`);
-  console.log(`👤 Profile system enabled`);  // 🆕 NEW
+  console.log(`👤 Profile system enabled`);
+  console.log(`📲 OTP system enabled`);  // 🆕 NEW
 });
