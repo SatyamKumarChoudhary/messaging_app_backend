@@ -3,21 +3,15 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-// Get current directory (ES Module compatible)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Read service account key
 const serviceAccount = JSON.parse(
   readFileSync(join(__dirname, 'serviceAccountKey.json'), 'utf8')
 );
 
-// Initialize Firebase Admin (only once)
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    projectId: 'ghost-ff8a0'
-  });
-}
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
 
 export default admin;
