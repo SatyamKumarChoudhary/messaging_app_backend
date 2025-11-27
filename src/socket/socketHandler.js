@@ -188,3 +188,4 @@ export function isUserOnline(userId) {
 export function getOnlineUsers() {
   return Object.keys(onlineUsers).length;
 }
+export { onlineUsers };

@@ -16,9 +16,11 @@ import messageRoutes from './routes/messageRoutes.js';
 import mediaRoutes from './routes/mediaRoutes.js';
 import groupRoutes from './routes/groupRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
-import otpRoutes from './routes/otpRoutes.js';  // 🆕 NEW: OTP routes
+import otpRoutes from './routes/otpRoutes.js';
 
-import { setupSocketHandlers } from './socket/socketHandler.js';
+// Import socket handlers
+import { setupCallHandlers } from './socket/callHandler.js';  // ✅ FIXED: Removed setOnlineUsers
+import { setupSocketHandlers, onlineUsers } from './socket/socketHandler.js';
 
 // Initialize Express app
 const app = express();
@@ -34,6 +36,9 @@ const io = new Server(server, {
 
 // Setup Socket.io handlers
 setupSocketHandlers(io);
+
+// ✅ FIXED: Pass onlineUsers as parameter to setupCallHandlers
+setupCallHandlers(io, onlineUsers);
 
 // Middleware
 app.use(cors());
@@ -54,7 +59,7 @@ app.use('/api/messages', messageRoutes);
 app.use('/api/media', mediaRoutes);
 app.use('/api/groups', groupRoutes);
 app.use('/api/profile', profileRoutes);
-app.use('/api/otp', otpRoutes);  // 🆕 NEW: OTP routes
+app.use('/api/otp', otpRoutes);
 
 // Test route
 app.get('/', (req, res) => {
@@ -66,7 +71,8 @@ app.get('/', (req, res) => {
       media: true,
       groups: true,
       profile: true,
-      otp: true  // 🆕 NEW
+      otp: true,
+      calling: true
     }
   });
 });
@@ -81,5 +87,6 @@ server.listen(PORT, () => {
   console.log(`📡 Socket.IO enabled`);
   console.log(`✅ Group chat enabled`);
   console.log(`👤 Profile system enabled`);
-  console.log(`📲 OTP system enabled`);  // 🆕 NEW
+  console.log(`📲 OTP system enabled`);
+  console.log(`📞 Call system enabled`);
 });
